@@ -35,7 +35,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func show(_ push: Push) {
         let key = push.notificationKey
-        guard active[key] == nil else { return }
+        // The same push can arrive more than once. An Android notification updated in
+        // place (a new chat message) keeps its key but changes content; reposting it
+        // under the same identifier replaces the banner.
+        if let shown = active[key], shown.hasSameContent(as: push) { return }
         active[key] = push
         guard let center else { return }
 
@@ -55,8 +58,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil)) { [weak self] error in
             guard error != nil else { return }
-            Task { @MainActor in self?.onError(Self.disabledMessage) }
+            Task { @MainActor in self?.addFailed(key) }
         }
+    }
+
+    /// Forget a notification that never appeared so a later copy can still show.
+    private func addFailed(_ key: String) {
+        active.removeValue(forKey: key)
+        onError(Self.disabledMessage)
     }
 
     func dismiss(_ push: Push) {

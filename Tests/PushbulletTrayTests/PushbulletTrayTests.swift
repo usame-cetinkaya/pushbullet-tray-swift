@@ -51,6 +51,15 @@ struct PushTests {
         #expect(mirror.applicationName == "WhatsApp")
     }
 
+    @Test func updatedMirrorHasNewContent() throws {
+        let first = try decoder.decode(Push.self, from: Data(#"{"type":"mirror","notification_id":"-8","title":"Bob","body":"hi"}"#.utf8))
+        let again = try decoder.decode(Push.self, from: Data(#"{"type":"mirror","notification_id":"-8","title":"Bob","body":"hi"}"#.utf8))
+        let updated = try decoder.decode(Push.self, from: Data(#"{"type":"mirror","notification_id":"-8","title":"Bob","body":"hi\nhow are you?"}"#.utf8))
+        #expect(first.notificationKey == updated.notificationKey)
+        #expect(first.hasSameContent(as: again))
+        #expect(!first.hasSameContent(as: updated))
+    }
+
     @Test func numericNotificationIdRoundTrips() throws {
         let push = try decoder.decode(Push.self, from: Data(#"{"type":"mirror","notification_id":42}"#.utf8))
         #expect(push.notificationId == .number(42))

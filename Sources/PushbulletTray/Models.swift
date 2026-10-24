@@ -62,6 +62,11 @@ struct Push: Decodable, Sendable {
         return merged
     }
 
+    func hasSameContent(as other: Push) -> Bool {
+        applicationName == other.applicationName && title == other.title
+            && body == other.body && icon == other.icon
+    }
+
     /// Identifies a notification across the mirror, the dismissal and the local banner.
     var notificationKey: String {
         iden ?? [notificationId?.description, notificationTag, packageName, sourceUserIden]
