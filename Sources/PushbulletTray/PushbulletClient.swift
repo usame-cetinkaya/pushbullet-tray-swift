@@ -93,14 +93,17 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
 
         Task {
             // The user's iden salts the E2EE key, so load it before any push can arrive.
+            // Without it encrypted pushes can't be read, so a failure is handled like a
+            // connection failure: the error stays visible and the whole connect is retried.
             let iden = try? decoder.decode(User.self, from: await request("users/me")).iden
             guard current == generation else { return }
-            if let iden {
-                if iden != userIden { encryptionKey = nil }
-                userIden = iden
-            } else {
+            guard let iden else {
                 onError("Error fetching user data")
+                scheduleReconnect()
+                return
             }
+            if iden != userIden { encryptionKey = nil }
+            userIden = iden
             openSocket(token: token)
         }
     }
