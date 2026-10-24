@@ -146,6 +146,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func deletePushHistory() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete Push History?"
+        alert.informativeText = "This permanently deletes all pushes from your Pushbullet account on every device. "
+            + "It will not delete the notifications from your Android device."
+        let delete = alert.addButton(withTitle: "Delete")
+        delete.hasDestructiveAction = true
+        // Return should never delete everything; make Cancel the default.
+        delete.keyEquivalent = ""
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
         client.deleteAllPushes()
     }
 

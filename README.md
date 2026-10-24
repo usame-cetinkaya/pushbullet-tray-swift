@@ -60,7 +60,7 @@ If you enabled end-to-end encryption in Pushbullet on your phone, choose **Enabl
 
 ## A Note About `Delete Push History` Option
 
-If you are using Pushbullet to get notifications from other services like me, you may want to delete the push history from time to time. This option will delete all push history from your Pushbullet account. It will not delete the notifications from your Android device.
+If you are using Pushbullet to get notifications from other services like me, you may want to delete the push history from time to time. This option will delete all push history from your Pushbullet account. It will not delete the notifications from your Android device. The app asks for confirmation first, because this cannot be undone.
 
 ## Building
 
