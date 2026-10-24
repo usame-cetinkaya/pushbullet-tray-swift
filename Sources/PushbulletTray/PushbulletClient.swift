@@ -258,21 +258,25 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
     /// Dismisses a mirrored notification on the Android device.
     func sendDismissal(_ push: Push) {
         let body = try? encoder.encode(DismissalEphemeral(dismissing: push))
+        let current = generation
         Task {
             do {
                 _ = try await request("ephemerals", method: "POST", body: body)
-                onDismiss(push)
             } catch {
+                // After the token is cleared nothing would ever clear this error.
+                guard current == generation else { return }
                 onError("Error sending dismissal: \(error.localizedDescription)")
             }
         }
     }
 
     func deleteAllPushes() {
+        let current = generation
         Task {
             do {
                 _ = try await request("pushes", method: "DELETE")
             } catch {
+                guard current == generation else { return }
                 onError("Error clearing push history: \(error.localizedDescription)")
             }
         }

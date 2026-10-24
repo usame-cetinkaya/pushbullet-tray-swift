@@ -22,11 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         client.onActivity = { [unowned self] in setError(nil) }
         notifier.onError = { [unowned self] in setError($0) }
         notifier.onUserDismiss = { [unowned self] push in
-            // Only mirrored notifications exist on the phone; other pushes just go away locally.
-            if push.type == "mirror" {
+            // The banner is gone either way, whatever happens to the request.
+            notifier.dismiss(push)
+            // Only mirrored notifications exist on the phone.
+            if push.type == "mirror", accessToken != nil {
                 client.sendDismissal(push)
-            } else {
-                notifier.dismiss(push)
             }
         }
 
