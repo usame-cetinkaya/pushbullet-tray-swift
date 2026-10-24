@@ -28,6 +28,8 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
     private var watchdog: Timer?
     private var latestNop = Date()
     private var latestModified: Double?
+    private var fetchInFlight = false
+    private var fetchQueued = false
     private var userIden: String?
     private var encryptionKey: SymmetricKey?
 
@@ -74,6 +76,7 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         latestModified = nil
+        fetchQueued = false
         userIden = nil
         encryptionKey = nil
     }
@@ -199,31 +202,51 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
 
     /// The first call after connecting only records the newest `modified`;
     /// later calls show or dismiss everything changed since then.
+    ///
+    /// Fetches run one at a time. A request made while one is running is queued and
+    /// runs afterwards from the updated `latestModified`, so a tickle that arrives
+    /// during the baseline fetch is not lost and no push is processed twice.
     private func fetchLatestPushes() {
+        guard !fetchInFlight else {
+            fetchQueued = true
+            return
+        }
+        fetchInFlight = true
+        fetchQueued = false
         let since = latestModified
         let current = generation
         Task {
             do {
                 let path = since.map { "pushes?modified_after=\($0)" } ?? "pushes?limit=1"
                 let pushes = try decoder.decode(PushList.self, from: await request(path)).pushes
-                guard current == generation else { return }
-                if since != nil {
-                    for push in pushes where push.type != nil {
-                        let push = decrypt(push)
-                        if push.dismissed == true {
-                            onDismiss(push)
-                        } else {
-                            onShow(push)
-                        }
-                    }
-                }
-                if let modified = pushes.first?.modified {
-                    latestModified = max(latestModified ?? 0, modified)
+                if current == generation {
+                    apply(pushes, incremental: since != nil)
                 }
             } catch {
-                guard current == generation else { return }
-                onError("Error fetching pushes: \(error.localizedDescription)")
+                if current == generation {
+                    onError("Error fetching pushes: \(error.localizedDescription)")
+                }
             }
+            fetchInFlight = false
+            if fetchQueued {
+                fetchLatestPushes()
+            }
+        }
+    }
+
+    private func apply(_ pushes: [Push], incremental: Bool) {
+        if incremental {
+            for push in pushes where push.type != nil {
+                let push = decrypt(push)
+                if push.dismissed == true {
+                    onDismiss(push)
+                } else {
+                    onShow(push)
+                }
+            }
+        }
+        if let modified = pushes.first?.modified {
+            latestModified = max(latestModified ?? 0, modified)
         }
     }
 
