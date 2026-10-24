@@ -162,7 +162,8 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
         MainActor.assumeIsolated {
             guard webSocketTask === socket else { return }
             onActivity()
-            latestModified = nil
+            // Keeps the watermark from before the disconnect, so pushes sent while
+            // offline are shown now.
             fetchLatestPushes()
         }
     }
@@ -200,8 +201,9 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
 
     // MARK: REST
 
-    /// The first call after connecting only records the newest `modified`;
-    /// later calls show or dismiss everything changed since then.
+    /// The first call after `start` only records the newest `modified`; later
+    /// calls, including those after a reconnect, show or dismiss everything
+    /// changed since then.
     ///
     /// Fetches run one at a time. A request made while one is running is queued and
     /// runs afterwards from the updated `latestModified`, so a tickle that arrives
@@ -264,7 +266,6 @@ final class PushbulletClient: NSObject, URLSessionWebSocketDelegate {
     }
 
     func deleteAllPushes() {
-        latestModified = nil
         Task {
             do {
                 _ = try await request("pushes", method: "DELETE")
