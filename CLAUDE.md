@@ -17,7 +17,7 @@ A native port of the Electron app [pushbullet-tray](https://github.com/usame-cet
 ## Architecture
 
 - `App.swift` - Entry point; runs `NSApplication` as an accessory (menu bar only) app.
-- `AppDelegate.swift` - `NSStatusItem` + menu, access token / E2EE password prompts, login item (`SMAppService`), and wiring between the client and the notifier. The tray shows `TrayError` with the message as tooltip after an error until the stream shows activity again.
+- `AppDelegate.swift` - `NSStatusItem` + menu, access token / E2EE password prompts, login item (`SMAppService`), and wiring between the client and the notifier. The tray shows `TrayError` with the message as tooltip after an error until the stream shows activity again. Denied notification permission is tracked separately and stays visible until notifications work again (rechecked when the menu opens and on every post).
 - `PushbulletClient.swift` - WebSocket stream (`wss://stream.pushbullet.com/websocket/<token>`) and REST API.
   - On connect: fetch `users/me` (its iden salts the E2EE key), open the socket. On the first open after `start`, fetch `pushes?limit=1` to record the latest `modified`; on later opens (reconnects), fetch `pushes?modified_after=` so pushes sent while offline are shown. Deleted pushes come back without a `type` and are skipped.
   - Stream: `nop` → heartbeat; `push` mirror → show, dismissal → dismiss; `tickle` push → fetch `pushes?modified_after=` and show/dismiss each.

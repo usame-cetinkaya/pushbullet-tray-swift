@@ -3,13 +3,16 @@ import ServiceManagement
 
 /// The menu bar item, its menu, and the wiring between the client and notifications.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let client = PushbulletClient()
     private let notifier = Notifier()
     private var statusItem: NSStatusItem?
     private var accessToken: String?
     private var e2eePassword: String?
+    /// A transient error, cleared as soon as the stream shows activity.
     private var errorMessage: String?
+    /// Lasts until notifications are allowed again; shown when there is no other error.
+    private var notificationsBlocked = false
     private let normalIcon = trayImage(named: "TrayIcon")
     private let errorIcon = trayImage(named: "TrayError")
 
@@ -20,7 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         client.onDismiss = { [unowned self] in notifier.dismiss($0) }
         client.onError = { [unowned self] in setError($0) }
         client.onActivity = { [unowned self] in setError(nil) }
-        notifier.onError = { [unowned self] in setError($0) }
+        notifier.onPermissionChange = { [unowned self] allowed in
+            guard notificationsBlocked == allowed else { return }
+            notificationsBlocked = !allowed
+            updateIcon()
+        }
         notifier.onUserDismiss = { [unowned self] push in
             // The banner is gone either way, whatever happens to the request.
             notifier.dismiss(push)
@@ -62,10 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
-        let image = errorMessage == nil ? normalIcon : errorIcon
+        let message = errorMessage ?? (notificationsBlocked ? Notifier.disabledMessage : nil)
+        let image = message == nil ? normalIcon : errorIcon
         button.image = image
         button.title = image == nil ? "PB" : ""
-        button.toolTip = errorMessage ?? "Pushbullet Tray"
+        button.toolTip = message ?? "Pushbullet Tray"
     }
 
     private func rebuildMenu() {
@@ -84,7 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(item("Quit", #selector(quit)))
+        menu.delegate = self
         statusItem?.menu = menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        notifier.refreshPermission()
     }
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {

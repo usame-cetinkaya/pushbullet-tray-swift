@@ -10,7 +10,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// Called when the user clicks or dismisses a notification.
     var onUserDismiss: @MainActor (Push) -> Void = { _ in }
-    var onError: @MainActor (String) -> Void = { _ in }
+    /// Called with whether macOS currently lets the app post notifications.
+    var onPermissionChange: @MainActor (Bool) -> Void = { _ in }
 
     /// nil when running outside an app bundle (e.g. `swift run`), where the framework is unavailable.
     private let center: UNUserNotificationCenter?
@@ -29,8 +30,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func requestAuthorization() {
         guard let center else { return }
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
-            guard !granted else { return }
-            Task { @MainActor in self?.onError(Self.disabledMessage) }
+            Task { @MainActor in self?.onPermissionChange(granted) }
+        }
+    }
+
+    /// Picks up a change made in System Settings since the last check.
+    func refreshPermission() {
+        guard let center else { return }
+        center.getNotificationSettings { [weak self] settings in
+            let allowed = settings.authorizationStatus != .denied
+            Task { @MainActor in self?.onPermissionChange(allowed) }
         }
     }
 
@@ -67,15 +76,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
 
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil)) { [weak self] error in
-            guard error != nil else { return }
-            Task { @MainActor in self?.addFailed(key) }
+            let posted = error == nil
+            Task { @MainActor in self?.added(key, posted: posted) }
         }
     }
 
-    /// Forget a notification that never appeared so a later copy can still show.
-    private func addFailed(_ key: String) {
-        active.removeValue(forKey: key)
-        onError(Self.disabledMessage)
+    private func added(_ key: String, posted: Bool) {
+        if !posted {
+            // Forget a notification that never appeared so a later copy can still show.
+            active.removeValue(forKey: key)
+        }
+        onPermissionChange(posted)
     }
 
     func dismiss(_ push: Push) {
