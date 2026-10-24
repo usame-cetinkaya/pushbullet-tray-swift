@@ -1,0 +1,106 @@
+import Foundation
+import UserNotifications
+
+/// Shows pushes as macOS notifications and reports when the user clicks or dismisses one.
+@MainActor
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+    static let disabledMessage = "Please enable notifications in System Settings > Notifications > Pushbullet Tray"
+    private static let category = "push"
+
+    /// Called when the user clicks or dismisses a notification.
+    var onUserDismiss: @MainActor (Push) -> Void = { _ in }
+    var onError: @MainActor (String) -> Void = { _ in }
+
+    /// nil when running outside an app bundle (e.g. `swift run`), where the framework is unavailable.
+    private let center: UNUserNotificationCenter?
+    private var active: [String: Push] = [:]
+
+    override init() {
+        center = Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
+        super.init()
+        center?.delegate = self
+        // `.customDismissAction` makes the system report dismissals, not just clicks.
+        center?.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.category, actions: [], intentIdentifiers: [], options: .customDismissAction)
+        ])
+    }
+
+    func requestAuthorization() {
+        guard let center else { return }
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+            guard !granted else { return }
+            Task { @MainActor in self?.onError(Self.disabledMessage) }
+        }
+    }
+
+    func show(_ push: Push) {
+        let key = push.notificationKey
+        guard active[key] == nil else { return }
+        active[key] = push
+        guard let center else { return }
+
+        let content = UNMutableNotificationContent()
+        let appName = push.applicationName.flatMap { $0.isEmpty ? nil : $0 } ?? "Pushbullet"
+        if let title = push.title, !title.isEmpty {
+            content.title = "\(appName): \(title)"
+        } else {
+            content.title = appName
+        }
+        content.body = push.body ?? ""
+        content.sound = .default
+        content.categoryIdentifier = Self.category
+        if let icon = Self.iconAttachment(push.icon) {
+            content.attachments = [icon]
+        }
+
+        center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil)) { [weak self] error in
+            guard error != nil else { return }
+            Task { @MainActor in self?.onError(Self.disabledMessage) }
+        }
+    }
+
+    func dismiss(_ push: Push) {
+        let key = push.notificationKey
+        guard active.removeValue(forKey: key) != nil else { return }
+        center?.removeDeliveredNotifications(withIdentifiers: [key])
+        center?.removePendingNotificationRequests(withIdentifiers: [key])
+    }
+
+    /// Attachments must be files; the system moves the file into its own store.
+    private static func iconAttachment(_ base64: String?) -> UNNotificationAttachment? {
+        guard let base64, let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters), !data.isEmpty else {
+            return nil
+        }
+        let isPNG = data.starts(with: [0x89, 0x50, 0x4E, 0x47])
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(isPNG ? "png" : "jpg")
+        do {
+            try data.write(to: url)
+            return try UNNotificationAttachment(identifier: "icon", url: url)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+    }
+
+    private func userResponded(to key: String) {
+        guard let push = active[key] else { return }
+        onUserDismiss(push)
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let key = response.notification.request.identifier
+        await userResponded(to: key)
+    }
+}
