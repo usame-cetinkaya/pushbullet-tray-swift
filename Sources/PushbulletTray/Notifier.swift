@@ -6,6 +6,7 @@ import UserNotifications
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let disabledMessage = "Please enable notifications in System Settings > Notifications > Pushbullet Tray"
     private static let category = "push"
+    private nonisolated static let pushKey = "push"
 
     /// Called when the user clicks or dismisses a notification.
     var onUserDismiss: @MainActor (Push) -> Void = { _ in }
@@ -55,6 +56,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if let icon = Self.iconAttachment(push.icon) {
             content.attachments = [icon]
         }
+        // Enough of the push to dismiss it on the phone, even after a relaunch.
+        var reference = push
+        reference.title = nil
+        reference.body = nil
+        reference.icon = nil
+        reference.ciphertext = nil
+        if let data = try? JSONEncoder().encode(reference) {
+            content.userInfo = [Self.pushKey: data]
+        }
 
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil)) { [weak self] error in
             guard error != nil else { return }
@@ -70,7 +80,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func dismiss(_ push: Push) {
         let key = push.notificationKey
-        guard active.removeValue(forKey: key) != nil else { return }
+        active.removeValue(forKey: key)
+        // Not guarded by `active`: banners shown before a relaunch must go too.
         center?.removeDeliveredNotifications(withIdentifiers: [key])
         center?.removePendingNotificationRequests(withIdentifiers: [key])
     }
@@ -93,8 +104,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func userResponded(to key: String) {
-        guard let push = active[key] else { return }
+    /// `active` is empty after a relaunch, so fall back to the push stored in the notification.
+    private func userResponded(to key: String, stored: Data?) {
+        guard let push = active[key] ?? stored.flatMap({ try? JSONDecoder().decode(Push.self, from: $0) }) else {
+            return
+        }
         onUserDismiss(push)
     }
 
@@ -109,7 +123,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let key = response.notification.request.identifier
-        await userResponded(to: key)
+        let request = response.notification.request
+        await userResponded(to: request.identifier, stored: request.content.userInfo[Self.pushKey] as? Data)
     }
 }

@@ -60,6 +60,15 @@ struct PushTests {
         #expect(!first.hasSameContent(as: updated))
     }
 
+    @Test func storedReferenceKeepsDismissalFields() throws {
+        let json = #"{"type":"mirror","notification_id":7,"notification_tag":"t","package_name":"p","source_user_iden":"u"}"#
+        let push = try decoder.decode(Push.self, from: Data(json.utf8))
+        let stored = try JSONDecoder().decode(Push.self, from: JSONEncoder().encode(push))
+        #expect(stored.type == "mirror")
+        #expect(stored.notificationId == .number(7))
+        #expect(stored.notificationKey == push.notificationKey)
+    }
+
     @Test func numericNotificationIdRoundTrips() throws {
         let push = try decoder.decode(Push.self, from: Data(#"{"type":"mirror","notification_id":42}"#.utf8))
         #expect(push.notificationId == .number(42))

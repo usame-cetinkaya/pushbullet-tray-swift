@@ -2,7 +2,7 @@ import Foundation
 
 /// A push as delivered by the REST API or the stream. Every field is optional and
 /// decoded leniently so one unexpected value never drops the whole push.
-struct Push: Decodable, Sendable {
+struct Push: Codable, Sendable {
     var type: String?
     var iden: String?
     var applicationName: String?
